@@ -1,22 +1,22 @@
-# RBC + Austin, TX Senior Finance AI Radar
+# RBC + Austin, TX AI & Finance Job Radar
 
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0051a5?style=flat-square&logo=python&logoColor=white)
 ![Zero API Keys](https://img.shields.io/badge/API%20Keys-None%20Required-047857?style=flat-square)
 ![Portals](https://img.shields.io/badge/Live%20Sources-RBC%20Workday%20%7C%20CNB%20%7C%20Ashby%20%7C%20Indeed%20%7C%20LinkedIn-002855?style=flat-square)
-![Target](https://img.shields.io/badge/Focus-20--Yr%20Finance%20%2B%20AI%20(Austin%2C%20TX)-ffd200?style=flat-square&labelColor=002855)
+![Target](https://img.shields.io/badge/Focus-Finance%20%2B%20AI%20(Austin%20%26%20Remote)-ffd200?style=flat-square&labelColor=002855)
 
-A turnkey multi-portal job scraper and local interactive web dashboard tailored for a **20-year financial services leader** targeting **AI Strategy, AI Enablement, Wealth/Capital Markets AI, and AI Governance roles connected to RBC** while living in **Austin, Texas**.
+A self-contained multi-portal job scraper and local interactive web dashboard tracking **AI, data, and financial services roles** across **RBC**, **City National Bank**, **enterprise AI partners**, and **Austin, TX / US-Remote** hiring channels.
 
-![RBC + Austin AI Radar Dashboard Preview](docs/dashboard_preview.png)
+![RBC + Austin AI & Finance Job Radar Preview](docs/dashboard_preview.png)
 
 ---
 
 ## Quick Start
 
-### Option A: Zero-Install Browser View (Instant, No Python or Git Needed)
+### Option A: Zero-Install Browser View (No Python or Git Required)
 1. Click **Code -> Download ZIP** at the top of this page and unzip the folder.
-2. Double-click `outputs/rbc_austin_ai_board.html` to open the pre-loaded interactive board directly in Chrome, Safari, or Edge.
-   * Full keyword search, lane filtering, posting excerpts, and persistent **Starred Shortlist** work out of the box offline.
+2. Open `outputs/rbc_austin_ai_board.html` directly in Chrome, Safari, or Edge.
+   * Keyword search, lane filters, full posting excerpts, and the browser-saved **Starred Shortlist** work immediately offline.
 
 ### Option B: Live Local Dashboard & One-Click Scraper
 
@@ -26,7 +26,7 @@ git clone https://github.com/jdoash/rbc-austin-ai-radar.git
 cd rbc-austin-ai-radar
 .\run.bat
 ```
-*(Or simply double-click `run.bat` inside File Explorer.)*
+*(Or double-click `run.bat` in File Explorer.)*
 
 #### macOS / Linux
 ```bash
@@ -36,47 +36,46 @@ chmod +x run.sh
 ./run.sh
 ```
 
-Both launchers automatically create an isolated `.venv`, install `requests` + `python-jobspy` (with an automatic fallback to core `requests` on locked machines), launch the local web server at **`http://127.0.0.1:8787`**, and open your browser.
+Both launchers automatically create a local `.venv`, install `requests` + `python-jobspy` (falling back cleanly to core `requests` on restricted machines), start the local web server at **`http://127.0.0.1:8787`**, and open your browser.
 
 ---
 
-## Why This Architecture? (Solving the 4-Day RTO Constraint)
+## Coverage Lanes
 
-Since September 2025, standard corporate and tech requisitions at RBC carry a **4-days-per-week in-office hybrid policy**, which means almost zero W-2 AI roles are posted externally as blanket "US Remote." To work on meaningful **RBC / Tier-1 Banking AI mandates from Austin, TX**, this radar tracks all **6 real-world entry lanes** side by side:
+Because corporate banking roles span direct W-2 requisitions, subsidiary boards, vendor ecosystems, and external advisory practices, the scraper organizes postings into **6 filterable lanes**:
 
-| Lane | Target Employers & Feeds | Location / RTO Mechanics | Strategy Angle |
+| Lane | Sources & Employers | Geographic Scope | Focus |
 | :--- | :--- | :--- | :--- |
-| **1. Direct RBC / CNB Austin + AI** | RBC Workday (`RBCGLOBAL1`), City National Bank | Austin, TX or explicit US-Remote | Immediate alert whenever a direct W-2 Austin or remote AI requisition opens |
-| **2. RBC Strategic AI Partners** | **Cohere** (*North for Banking*), **Conquest Planning** (*SAM*), **Factory**, **Solace** | Remote (US / Central) or Austin, TX (Zero bank RTO) | Build and deploy GenAI directly into RBC Wealth Management & Capital Markets from the partner side |
-| **3. Banking AI Consulting & SOWs** | Tier-1 Financial Services AI & Model Risk (`SR 11-7`) practices (Indeed + LinkedIn) | Austin, TX Hybrid or US-Remote | Lead multi-quarter AI transformation SOWs inside Tier-1 banks without FTE location locks |
-| **4. RBC US Senior Finance + AI** | RBC US Wealth Management (Minneapolis HQ) & Capital Markets (NY / JC / Charlotte) | Spoke-Office / Executive Travel Pitch | Pitch badge-in seating at RBC Wealth Management Austin (`5301 Southwest Pkwy, Suite 300`) or Dallas + monthly hub travel |
-| **5. RBC / CNB Texas Precedents** | City National Rochdale & RBC Texas corporate postings | Confirmed `Remote - Texas` or Dallas/Houston | Proves active Texas payroll and remote field territory codes already used inside RBC US |
-| **6. RBC AI Executive Blueprints** | RBC Toronto HQ (`Senior Director, AI Business Enablement`, `Operations AI Readiness`) | Mandate Reference | Exact charter language RBC uses when hiring 20-year business leaders to run AI adoption |
+| **1. Direct RBC / CNB (Austin & Remote)** | RBC Workday (`RBCGLOBAL1`), City National Bank | Austin, TX or US-Remote | Direct W-2 AI, data, and transformation postings in Texas or remote |
+| **2. Strategic AI Partners** | **Cohere**, **Conquest Planning**, **Factory**, **Solace** | Austin, TX or US-Remote | Enterprise AI platforms deployed across banking, wealth management, and capital markets |
+| **3. Banking AI Consulting & Advisory** | Financial Services AI & Model Risk practices (`Indeed` + `LinkedIn`) | Austin, TX or US-Remote | Director, Principal, VP, and Practice Lead roles supporting Tier-1 banking AI programs |
+| **4. US Finance + AI Hub Roles** | RBC US Wealth Management (Minneapolis) & Capital Markets (NY / JC / Charlotte) | Major US Hubs | Senior US AI, Wealth, and Capital Markets leadership mandates |
+| **5. Texas & Remote Precedents** | City National Rochdale & RBC Texas postings | Texas (Austin / Dallas / Houston) & Remote | Active Texas corporate hub and remote field postings across RBC US entities |
+| **6. Enterprise AI Mandate Benchmarks** | RBC Global Workday (`AI Business Enablement`, `AI Readiness`) | Global HQ Reference | Reference charters for enterprise AI adoption, governance, and product leadership |
 
 ---
 
 ## Key Features
 
-* **Live Multi-Source Scraping (Zero API Keys):** Queries RBC Global Workday's JSON endpoints, City National Bank's careers API, Ashby partner boards (`Cohere`, `Factory`), and `JobSpy` (`Indeed USA` + `LinkedIn`) in parallel.
-* **Seniority & Domain Scoring (`Fit 65-97`):** Automatically filters out junior/intern/unrelated engineering noise and ranks Director, VP, Managing Director, Principal, and Practice Lead roles by Austin viability and AI depth.
-* **Actionable Per-Card Playbook Notes:** Every card surfaces extracted salary bands, matched AI context quotes from the posting body, and the specific Austin/spoke-office positioning angle.
-* **Browser-Saved Shortlist & Excel CSV Export:** Star roles into a persistent browser shortlist (`localStorage`) or click **Download CSV** (`UTF-8 BOM` formatted for clean opening in Microsoft Excel).
+* **Multi-Portal Live Scraper (No API Keys Needed):** Pulls structured postings from RBC Global Workday, City National Bank's careers API, Ashby partner boards, and `JobSpy` (`Indeed USA` + `LinkedIn`).
+* **Relevance Filtering & Fit Scoring:** Filters out internships and unrelated entry-level listings while surfacing matched AI signals, salary ranges (where disclosed), and location classifications.
+* **Persistent Shortlist & Excel CSV Export:** Save roles to a browser shortlist (`localStorage`) or export the full dataset to CSV (`UTF-8 BOM` encoded for clean opening in Excel).
 
 ---
 
-## How to Tweak It for Your Own Search
+## Customizing the Scraper
 
-Everything lives in a single readable file (`rbc_austin_radar.py`) so it is easy to customize:
+All scraping, filtering, and UI generation live in a single Python file (`rbc_austin_radar.py`) so you can easily adapt it to any city, company list, or role focus:
 
-* **Add or change AI / Finance keywords:** Edit `AI_REGEX` (line 65) or seniority filters in `classify_and_score()` (line 485).
-* **Add more Ashby / partner companies:** Append `(slug, display_name, note)` tuples inside `scrape_ashby_partners()` (line 293).
-* **Adjust Indeed / LinkedIn search queries or target cities:** Edit the `queries` list inside `scrape_jobspy_ecosystem_and_sow()` (line 356) to swap `"Austin, TX"` or tune boolean title strings.
-* **CLI flags:**
+* **Keywords & role filters:** Update `AI_REGEX` and the title/seniority keyword lists inside `classify_and_score()`.
+* **Partner job boards:** Add or swap Ashby company slugs inside `scrape_ashby_partners()`.
+* **Indeed / LinkedIn search queries & locations:** Edit the `queries` list inside `scrape_jobspy_ecosystem_and_sow()` to change cities, boolean search strings, or result limits.
+* **CLI options:**
   ```bash
-  python rbc_austin_radar.py --serve          # Interactive local web server on http://127.0.0.1:8787
-  python rbc_austin_radar.py --quick          # Fast ~15s API refresh (RBC + CNB + Ashby; preserves SOW cache)
-  python rbc_austin_radar.py                  # Full scrape (APIs + Indeed USA + LinkedIn) + open HTML
-  python rbc_austin_radar.py --port 8890      # Custom local server port
+  python rbc_austin_radar.py --serve          # Launch interactive local web app on http://127.0.0.1:8787
+  python rbc_austin_radar.py --quick          # Fast ~15s API refresh (RBC + CNB + Ashby; keeps cached external roles)
+  python rbc_austin_radar.py                  # Full scrape (APIs + Indeed + LinkedIn) + open static HTML
+  python rbc_austin_radar.py --port 8890      # Run local server on a custom port
   ```
 
 ---
@@ -85,14 +84,14 @@ Everything lives in a single readable file (`rbc_austin_radar.py`) so it is easy
 
 ```text
 rbc-austin-ai-radar/
-|-- rbc_austin_radar.py               # Self-contained scraper, scorer, HTML builder, and local web server
-|-- run.bat                           # One-click Windows launcher (.venv + dependencies + server)
+|-- rbc_austin_radar.py               # Scraper, classifier, HTML generator, and local HTTP server
+|-- run.bat                           # One-click Windows launcher
 |-- run.sh                            # One-click macOS / Linux launcher
 |-- requirements.txt                  # Python dependencies (requests, python-jobspy)
 |-- docs/
-|   `-- dashboard_preview.png         # Front-page UI preview
+|   `-- dashboard_preview.png         # Dashboard screenshot
 `-- outputs/
-    |-- rbc_austin_ai_board.html      # Standalone zero-dependency interactive HTML dashboard
-    |-- rbc_austin_ai_jobs.csv        # Excel-ready spreadsheet export (pay bands, AI quotes, URLs)
-    `-- rbc_austin_ai_jobs.json       # Structured JSON snapshot + scrape metadata
+    |-- rbc_austin_ai_board.html      # Standalone interactive HTML dashboard
+    |-- rbc_austin_ai_jobs.csv        # Excel-ready CSV export
+    `-- rbc_austin_ai_jobs.json       # Structured JSON snapshot
 ```

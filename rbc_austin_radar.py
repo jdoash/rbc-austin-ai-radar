@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-RBC + Austin, TX Senior Finance AI Radar
+RBC + Austin, TX AI & Finance Job Radar
 ========================================
-Standalone multi-portal job radar and local web dashboard designed for a
-20-year financial services veteran targeting AI-related roles connected to
-RBC (Royal Bank of Canada, RBC Wealth Management US, RBC Capital Markets,
-City National Bank, City National Rochdale, and RBC's strategic AI & SOW
-consulting ecosystem) while living in Austin, Texas.
+Standalone multi-portal job scraper and local web dashboard tracking AI,
+data, and financial services roles across RBC, City National Bank, partner
+ecosystems, and Austin, TX / US-Remote channels.
 
 Usage:
   python rbc_austin_radar.py            # Full live scrape + open HTML board
@@ -82,12 +80,12 @@ US_STATE_MARKERS = [
 ]
 
 BUCKET_LABELS = {
-    "1_direct_rbc_austin_remote_ai": "1. Direct RBC / CNB: Austin, TX or US-Remote + AI",
-    "2_rbc_strategic_ai_partners": "2. RBC Strategic AI Partners (Austin / US-Remote, No Bank RTO)",
-    "3_banking_ai_consulting_sow": "3. Austin & US-Remote Finance AI Executive & SOW Advisory Leads",
-    "4_rbc_us_senior_finance_ai": "4. RBC US Senior Finance + AI (Spoke-Office / Hybrid Pitch)",
-    "5_rbc_tx_remote_precedents": "5. RBC / CNB Texas & US-Remote Precedents",
-    "6_rbc_ai_enablement_blueprints": "6. RBC 'AI Business Enablement' Executive Blueprints",
+    "1_direct_rbc_austin_remote_ai": "1. Direct RBC / CNB: Austin, TX & US-Remote + AI",
+    "2_rbc_strategic_ai_partners": "2. Strategic AI Partners (Austin & US-Remote)",
+    "3_banking_ai_consulting_sow": "3. Austin & US-Remote Banking AI Consulting & Advisory",
+    "4_rbc_us_senior_finance_ai": "4. RBC US Finance + AI Hub Roles",
+    "5_rbc_tx_remote_precedents": "5. RBC / CNB Texas & US-Remote Roles",
+    "6_rbc_ai_enablement_blueprints": "6. Enterprise AI Enablement & Readiness Benchmarks",
 }
 
 SCRAPE_STATUS: Dict[str, Any] = {
@@ -439,8 +437,8 @@ def scrape_jobspy_ecosystem_and_sow() -> List[Dict[str, Any]]:
                     if not re.search(r"\b(bank|banking|wealth management|capital markets|financial services|asset management)\b", blob, re.I):
                         continue
                     p_note = (
-                        "Austin / US-Remote Financial Services AI leadership or advisory role. Advisory and SOW directors "
-                        "regularly serve Tier-1 banks (including RBC USWM, Capital Markets, and City National) without bank RTO locks."
+                        "Austin / US-Remote Financial Services AI leadership or advisory role supporting Tier-1 banking, "
+                        "wealth management, and capital markets transformation programs."
                     )
 
                 is_rem_flag = row.get("is_remote")
@@ -473,7 +471,7 @@ def scrape_jobspy_ecosystem_and_sow() -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def classify_and_score(all_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    print("[5/5] Scoring and classifying opportunities for 20-Yr Finance + Austin, TX...")
+    print("[5/5] Scoring and classifying AI & Finance opportunities...")
     curated: List[Dict[str, Any]] = []
     seen_keys = set()
 
@@ -536,7 +534,7 @@ def classify_and_score(all_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if kind == "direct_rbc" and is_us and (is_austin or is_texas or is_remote) and len(ai_signals) > 0:
             bucket = "1_direct_rbc_austin_remote_ai"
             score = 97 if is_austin else (93 if is_texas else 90)
-            austin_strategy = "Direct RBC/CNB geographic + AI match. Confirm Texas home-office or Austin spoke-office seating in recruiter screen."
+            austin_strategy = "Direct RBC / CNB geographic + AI match (Texas or US-Remote)."
 
         # Bucket 2: RBC Strategic AI Partners (Cohere, Conquest Planning, Factory, Solace) in Austin / US-Remote
         elif kind == "rbc_partner" and is_us and (is_austin or is_texas or is_remote):
@@ -544,7 +542,7 @@ def classify_and_score(all_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 bucket = "2_rbc_strategic_ai_partners"
                 score = 91 if ("corporate development" in title_low or "conquest" in item["company"].lower() or is_austin) else 85
                 austin_strategy = item.get("partner_note") or (
-                    "RBC Strategic AI Partner hiring Remote in Austin/US with zero 4-day bank RTO lock."
+                    "Enterprise AI partner hiring in Austin / US-Remote."
                 )
 
         # Bucket 3: Austin & US-Remote Finance AI Executive / SOW Consulting Leads
@@ -554,22 +552,20 @@ def classify_and_score(all_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             bucket = "3_banking_ai_consulting_sow"
             score = 86 if "austin" in loc_low else 82
             austin_strategy = item.get("partner_note") or (
-                "Austin / US-Remote Financial Services AI executive or SOW consulting lead."
+                "Austin / US-Remote Financial Services AI leadership or advisory role."
             )
 
-        # Bucket 4: Direct RBC US Senior Finance + AI (Spoke-Office / Hybrid Negotiation)
+        # Bucket 4: Direct RBC US Senior Finance + AI
         elif kind == "direct_rbc" and is_us and len(ai_signals) > 0 and is_senior_finance:
             bucket = "4_rbc_us_senior_finance_ai"
             score = 84 if "minneapolis" in loc_low else 78
             if "minneapolis" in loc_low:
                 austin_strategy = (
-                    "US Wealth Management role (Minneapolis HQ). Pitch badge-in spoke-office seating at "
-                    "RBC Wealth Management Austin (5301 Southwest Pkwy, Suite 300) or Dallas + monthly MN travel."
+                    "US Wealth Management hub role (Minneapolis HQ; RBC USWM also maintains regional offices in Austin and Dallas)."
                 )
             else:
                 austin_strategy = (
-                    "Capital Markets / Institutional hub role (NY/JC/Charlotte). Standard FTEs face 4-day RTO; "
-                    "approach via executive travel exception or approved US consulting SOW."
+                    "Capital Markets / Institutional hub role (NY / Jersey City / Charlotte)."
                 )
 
         # Bucket 5: RBC / CNB Texas & US-Remote Precedents
@@ -578,21 +574,20 @@ def classify_and_score(all_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 bucket = "5_rbc_tx_remote_precedents"
                 score = 75 if (is_texas and is_remote) else (72 if is_texas else 66)
                 if is_texas and is_remote:
-                    austin_strategy = "Confirmed Remote-in-Texas field classification (home office in Austin works natively)."
+                    austin_strategy = "Remote-in-Texas classification."
                 elif is_texas:
-                    austin_strategy = "Confirmed Texas corporate hub role (Dallas/Houston); establishes Texas payroll corridor."
+                    austin_strategy = "Texas regional office role (Dallas / Houston / Austin)."
                 else:
-                    austin_strategy = "Confirmed US Remote / Virtual precedent inside RBC / City National Bank."
+                    austin_strategy = "US Remote / Virtual role across RBC / City National Bank."
 
-        # Bucket 6: RBC Global 'AI Business Enablement' Executive Blueprints (Canada HQ)
+        # Bucket 6: RBC Global 'AI Business Enablement' Benchmarks (Canada HQ)
         elif kind == "direct_rbc" and not is_us and ai_in_title and any(
             k in title_low for k in ["ai business enablement", "ai readiness", "ai product management", "ai governance", "ai/ml"]
         ) and any(s in title_low for s in ["director", "senior director", "senior technical product manager"]):
             bucket = "6_rbc_ai_enablement_blueprints"
             score = 76
             austin_strategy = (
-                "Canadian HQ executive blueprint: exact role title & charter RBC uses for 20-year finance leaders driving AI adoption. "
-                "Use this mandate language when pitching US Wealth Management (Minneapolis/Austin) leadership."
+                "HQ benchmark posting: reference mandate language for enterprise AI adoption, readiness, and governance leadership."
             )
 
         if not bucket:
@@ -685,7 +680,7 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
           </div>
           {ai_quote}
           <div class="strategy-box">
-            <strong>Austin, TX Playbook Angle:</strong> {html.escape(job['austin_strategy'])}
+            <strong>Notes:</strong> {html.escape(job['austin_strategy'])}
           </div>
           <details class="desc-toggle">
             <summary>Read Full Posting Excerpt</summary>
@@ -699,7 +694,7 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RBC + Austin, TX Senior Finance AI Radar</title>
+  <title>RBC + Austin, TX AI &amp; Finance Job Radar</title>
   <style>
     :root {{
       --rbc-blue: #0051a5;
@@ -900,7 +895,7 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
     <div class="wrap">
       <div class="hdr-top">
         <div>
-          <h1>RBC + Austin, Texas: 20-Year Finance Veteran AI Radar</h1>
+          <h1>RBC + Austin, TX AI &amp; Finance Job Radar</h1>
           <p>Last scraped: {html.escape(now_str)} &middot; Sources: RBC Workday, City National Bank, Cohere, Factory, Indeed USA, LinkedIn</p>
         </div>
         {server_controls}
@@ -934,20 +929,20 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
     <div class="wrap">
       <section class="playbook-grid">
         <div class="play-card">
-          <h3>Lane 1: RBC Strategic AI Partners (100% Austin / Remote)</h3>
-          <p>Work directly on RBC's AI stack without RBC's 4-day office mandate: Cohere (co-builder of RBC's North for Banking), Conquest Planning (RBC-backed AI wealth engine), Factory (Austin/Central), and Solace.</p>
+          <h3>Lane 1: Strategic AI Partners (Austin &amp; Remote)</h3>
+          <p>Enterprise AI vendors deployed across banking and wealth platforms (Cohere, Conquest Planning, Factory, and Solace) hiring in Austin and US-Remote.</p>
         </div>
         <div class="play-card">
-          <h3>Lane 2: Banking AI Consulting &amp; SOW Directors (Austin)</h3>
-          <p>Enter through Tier-1 Financial Services AI &amp; Model Risk advisory practices in Austin or US-Remote that staff transformation SOWs inside RBC US Wealth Management, Capital Markets, and City National.</p>
+          <h3>Lane 2: Banking AI Consulting &amp; Advisory</h3>
+          <p>Financial Services AI Strategy, Governance, and Model Risk practices in Austin and US-Remote supporting Tier-1 banking transformation programs.</p>
         </div>
         <div class="play-card">
-          <h3>Lane 3: Austin Spoke-Office Pitch (5301 Southwest Pkwy)</h3>
-          <p>Target US Wealth Management leadership roles in Minneapolis and negotiate badge-in spoke-office seating at RBC Wealth Management's Austin office (5301 Southwest Pkwy, Suite 300) or Dallas hub.</p>
+          <h3>Lane 3: US Finance + AI Hub Roles</h3>
+          <p>Senior US Wealth Management (Minneapolis) and Capital Markets requisitions tracked alongside regional Texas office locations (Austin &amp; Dallas).</p>
         </div>
         <div class="play-card">
-          <h3>Lane 4: Remote-in-Texas Field Code (City National / Rochdale)</h3>
-          <p>City National Rochdale and RBC USWM use Remote-in-Texas territory codes for regional consultants (see CNB-13012). Pitch Advisor AI Enablement on that exact Texas field payroll code.</p>
+          <h3>Lane 4: Texas &amp; Remote Roles (RBC / CNB)</h3>
+          <p>Active Texas hub and Remote-in-Texas field postings across City National Bank, City National Rochdale, and RBC US Wealth Management.</p>
         </div>
       </section>
 
@@ -1231,7 +1226,7 @@ def serve_app(port: int = 8787) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="RBC + Austin, TX Senior Finance AI Radar")
+    parser = argparse.ArgumentParser(description="RBC + Austin, TX AI & Finance Job Radar")
     parser.add_argument("--quick", action="store_true", help="Fast API scrape (~15s, skips JobSpy Indeed/LinkedIn)")
     parser.add_argument("--serve", action="store_true", help="Run interactive local web server on http://127.0.0.1:8787")
     parser.add_argument("--port", type=int, default=8787, help="Port for --serve mode (default: 8787)")

@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo ============================================================
-echo   RBC + Austin, TX Senior Finance AI Radar
+echo   RBC + Austin, TX AI ^& Finance Job Radar
 echo ============================================================
 
 if not exist ".venv\Scripts\python.exe" (
