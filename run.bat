@@ -8,10 +8,24 @@ echo ============================================================
 
 if not exist ".venv\Scripts\python.exe" (
     echo [1/2] Creating local Python virtual environment...
-    python -m venv .venv
+    where python >nul 2>nul
+    if %errorlevel% equ 0 (
+        python -m venv .venv
+    ) else (
+        py -3 -m venv .venv
+    )
+    if not exist ".venv\Scripts\python.exe" (
+        echo Python 3 was not found. Opening pre-loaded HTML snapshot in your browser instead...
+        start "" "outputs\rbc_austin_ai_board.html"
+        exit /b 0
+    )
     echo [2/2] Installing dependencies...
     ".venv\Scripts\python.exe" -m pip install --upgrade pip -q
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+    if %errorlevel% neq 0 (
+        echo Optional JobSpy build skipped; installing core requests scraper...
+        ".venv\Scripts\python.exe" -m pip install "requests>=2.31.0"
+    )
 )
 
 set PYTHONIOENCODING=utf-8

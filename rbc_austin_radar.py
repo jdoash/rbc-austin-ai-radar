@@ -22,9 +22,12 @@ import concurrent.futures
 import csv
 import html
 import json
+import math
 import re
+import socket
 import threading
 import time
+import urllib.request
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -95,6 +98,17 @@ SCRAPE_STATUS: Dict[str, Any] = {
 }
 
 
+def clean_field(val: Any) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, float) and math.isnan(val):
+        return ""
+    s = str(val).strip()
+    if s.lower() in ("nan", "none", "nat", "null"):
+        return ""
+    return sanitize_dashes(s)
+
+
 def sanitize_dashes(text: str) -> str:
     if not text:
         return ""
@@ -148,12 +162,23 @@ def scrape_rbc_workday() -> tuple[List[Dict[str, Any]], int]:
     SCRAPE_STATUS["step"] = "Scraping RBC Global Workday (RBCGLOBAL1)..."
     print("[1/5] Scraping RBC Global Workday (RBCGLOBAL1)...")
     list_url = "https://rbc.wd3.myworkdayjobs.com/wday/cxs/rbc/RBCGLOBAL1/jobs"
-    r0 = requests.post(
-        list_url,
-        headers=HEADERS,
-        json={"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""},
-        timeout=25,
-    ).json()
+    r0: Dict[str, Any] = {}
+    for attempt in range(2):
+        try:
+            resp0 = requests.post(
+                list_url,
+                headers=HEADERS,
+                json={"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""},
+                timeout=25,
+            )
+            if resp0.status_code == 200:
+                r0 = resp0.json()
+                break
+        except Exception as e:
+            if attempt == 1:
+                print(f"      RBC Workday initial request warning: {e}")
+                return [], 0
+            time.sleep(1.0)
     total = r0.get("total", 0)
     postings = list(r0.get("jobPostings", []))
 
@@ -391,13 +416,14 @@ def scrape_jobspy_ecosystem_and_sow() -> List[Dict[str, Any]]:
             if df is None or df.empty:
                 continue
             for _, row in df.iterrows():
-                url = str(row.get("job_url") or "")
+                url = clean_field(row.get("job_url"))
                 if not url or url in seen_urls:
                     continue
-                comp = sanitize_dashes(str(row.get("company") or ""))
-                title = sanitize_dashes(str(row.get("title") or ""))
-                desc = strip_html(str(row.get("description") or ""))
-                loc = sanitize_dashes(str(row.get("location") or ""))
+                comp = clean_field(row.get("company"))
+                title = clean_field(row.get("title"))
+                raw_desc = row.get("description")
+                desc = "" if (raw_desc is None or (isinstance(raw_desc, float) and math.isnan(raw_desc)) or str(raw_desc).strip().lower() in ("nan", "none")) else strip_html(str(raw_desc))
+                loc = clean_field(row.get("location"))
                 blob = f"{comp} {title} {desc}"
 
                 if q["kind"] == "rbc_partner":
@@ -417,17 +443,20 @@ def scrape_jobspy_ecosystem_and_sow() -> List[Dict[str, Any]]:
                         "regularly serve Tier-1 banks (including RBC USWM, Capital Markets, and City National) without bank RTO locks."
                     )
 
+                is_rem_flag = row.get("is_remote")
+                is_rem_bool = bool(is_rem_flag) and not (isinstance(is_rem_flag, float) and math.isnan(is_rem_flag))
+                site_lbl = clean_field(row.get("site")) or "board"
                 seen_urls.add(url)
                 found.append({
                     "kind": q["kind"],
-                    "source": f"JobSpy ({row.get('site', 'board')})",
+                    "source": f"JobSpy ({site_lbl})",
                     "company": comp or "Enterprise Advisory",
                     "req_id": f"EXT-{len(found)+1:03d}",
                     "title": title,
                     "location": loc,
                     "country": "United States of America",
-                    "remote_type": "Remote" if (bool(row.get("is_remote")) or "remote" in loc.lower()) else "Austin / Hybrid",
-                    "posted_on": sanitize_dashes(str(row.get("date_posted") or "")),
+                    "remote_type": "Remote" if (is_rem_bool or "remote" in loc.lower()) else "Austin / Hybrid",
+                    "posted_on": clean_field(row.get("date_posted")),
                     "url": url,
                     "description": desc,
                     "partner_note": p_note,
@@ -643,7 +672,7 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
             </div>
             <div class="card-right">
               <div class="right-row">
-                <button class="star-btn" onclick="toggleStar('{job_key}', this)" title="Save to shortlist">&#9734;</button>
+                <button class="star-btn" onclick="toggleStar(this.closest('.job-card').dataset.key, this)" title="Save to shortlist">&#9734;</button>
                 <span class="score-pill">Fit {job['score']}</span>
               </div>
               <a class="apply-btn" href="{html.escape(job['url'])}" target="_blank" rel="noopener">Open Posting</a>
@@ -1023,23 +1052,52 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
 # Pipeline Runner & Local Server
 # ---------------------------------------------------------------------------
 
+def load_cached_external_jobs() -> List[Dict[str, Any]]:
+    json_file = OUT_DIR / "rbc_austin_ai_jobs.json"
+    if not json_file.exists():
+        return []
+    try:
+        payload = json.loads(json_file.read_text(encoding="utf-8"))
+        jobs = payload.get("jobs", payload if isinstance(payload, list) else [])
+        preserved = []
+        for j in jobs:
+            if str(j.get("source", "")).startswith("JobSpy"):
+                for fld in ("posted_on", "location", "pay_band", "ai_signals", "ai_snippet"):
+                    j[fld] = clean_field(j.get(fld))
+                preserved.append(j)
+        return preserved
+    except Exception:
+        return []
+
+
 def run_pipeline(quick: bool = False) -> Path:
     SCRAPE_STATUS["running"] = True
     SCRAPE_STATUS["error"] = ""
     try:
+        cached_ext = load_cached_external_jobs() if (quick or not JOBSPY_AVAILABLE) else []
         rbc_items, rbc_total = scrape_rbc_workday()
         cnb_items, cnb_total = scrape_cnb()
         ashby_items = scrape_ashby_partners()
         ext_items = [] if quick else scrape_jobspy_ecosystem_and_sow()
 
         curated = classify_and_score(rbc_items + cnb_items + ashby_items + ext_items)
+        if not ext_items and cached_ext:
+            existing_keys = {(x["company"].lower(), x["title"].lower()) for x in curated}
+            for cj in cached_ext:
+                k = (cj.get("company", "").lower(), cj.get("title", "").lower())
+                if k not in existing_keys:
+                    curated.append(cj)
+                    existing_keys.add(k)
+            curated.sort(key=lambda x: (x["bucket"], -x["score"], x["title"]))
+            print(f"      Preserved {len(cached_ext)} cached Indeed/LinkedIn SOW postings during fast API refresh.")
+
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         stats = {
             "timestamp": now_str,
             "rbc_total": rbc_total,
             "cnb_total": cnb_total,
             "ashby_total": len(ashby_items),
-            "ext_total": len(ext_items),
+            "ext_total": len(ext_items) if ext_items else len(cached_ext),
         }
 
         (OUT_DIR / "rbc_austin_ai_jobs.json").write_text(
@@ -1052,8 +1110,8 @@ def run_pipeline(quick: bool = False) -> Path:
             "location", "remote_type", "pay_band", "posted_on", "ai_signals",
             "ai_snippet", "austin_strategy", "url", "description",
         ]
-        with (OUT_DIR / "rbc_austin_ai_jobs.csv").open("w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+        with (OUT_DIR / "rbc_austin_ai_jobs.csv").open("w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(curated)
 
@@ -1129,12 +1187,40 @@ class RadarHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
+
 def serve_app(port: int = 8787) -> None:
     if not (OUT_DIR / "rbc_austin_ai_jobs.json").exists():
         print("No cached snapshot found; running initial fast API scrape...")
         run_pipeline(quick=True)
-    url = f"http://127.0.0.1:{port}"
-    server = ThreadingHTTPServer(("127.0.0.1", port), RadarHandler)
+
+    # If an instance of this radar is already running on the requested port, open it cleanly
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=0.8) as resp:
+            if resp.status == 200:
+                url = f"http://127.0.0.1:{port}"
+                print(f"\nRadar server is already running at {url} - opening browser.")
+                webbrowser.open(url)
+                return
+    except Exception:
+        pass
+
+    chosen_port = port
+    server = None
+    for candidate in range(port, port + 10):
+        try:
+            server = ReusableThreadingHTTPServer(("127.0.0.1", candidate), RadarHandler)
+            chosen_port = candidate
+            break
+        except OSError:
+            continue
+
+    if server is None:
+        raise RuntimeError(f"Could not bind local server on ports {port}-{port + 9}.")
+
+    url = f"http://127.0.0.1:{chosen_port}"
     print(f"\nRadar live at {url} (Press Ctrl+C to stop)")
     threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

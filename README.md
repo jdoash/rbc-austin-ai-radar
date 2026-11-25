@@ -23,9 +23,15 @@ Since September 2025, RBC enforces a **4-days-per-week in-office hybrid policy**
 
 ---
 
-## Quick Start (One-Click Launch)
+## Quick Start
 
-### Windows
+### Option A: Zero-Install Browser View (No Python or Git Required)
+1. Click **Code -> Download ZIP** on GitHub and unzip the folder.
+2. Double-click `outputs/rbc_austin_ai_board.html` to open the pre-loaded interactive board straight in your browser (search, lane filters, and starred shortlist work offline).
+
+### Option B: Live Local Dashboard & Scraper (One-Click Launch)
+
+#### Windows
 Double-click `run.bat` (or run in PowerShell / Command Prompt):
 ```bat
 git clone https://github.com/jdoash/rbc-austin-ai-radar.git
@@ -33,7 +39,7 @@ cd rbc-austin-ai-radar
 .\run.bat
 ```
 
-### macOS / Linux
+#### macOS / Linux
 ```bash
 git clone https://github.com/jdoash/rbc-austin-ai-radar.git
 cd rbc-austin-ai-radar
@@ -41,7 +47,7 @@ chmod +x run.sh
 ./run.sh
 ```
 
-Both launchers automatically create a local `.venv`, install dependencies (`requests` and `python-jobspy`), start the local interactive dashboard at **`http://127.0.0.1:8787`**, and open your browser.
+Both launchers automatically create a local `.venv`, install dependencies (`requests` + `python-jobspy`, with an automatic fallback to core `requests` if `python-jobspy` cannot build on a locked corporate machine), start the local interactive dashboard at **`http://127.0.0.1:8787`**, and open your browser.
 
 ---
 
