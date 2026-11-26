@@ -318,8 +318,10 @@ def scrape_cnb() -> tuple[List[Dict[str, Any]], int]:
                 if len(batch) < 100:
                     break
             else:
+                print(f"      CNB page {page} returned HTTP {r.status_code}; stopping pagination.")
                 break
-        except Exception:
+        except Exception as e:
+            print(f"      CNB page {page} warning: {e}")
             break
 
     results = []
@@ -1116,50 +1118,74 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
 # Pipeline Runner & Local Server
 # ---------------------------------------------------------------------------
 
-def load_cached_external_jobs() -> List[Dict[str, Any]]:
+def load_cached_snapshot() -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
     json_file = OUT_DIR / "rbc_austin_ai_jobs.json"
     if not json_file.exists():
-        return []
+        return [], {}
     try:
         payload = json.loads(json_file.read_text(encoding="utf-8"))
         jobs = payload.get("jobs", payload if isinstance(payload, list) else [])
-        preserved = []
+        stats = payload.get("stats", {}) if isinstance(payload, dict) else {}
+        cleaned = []
         for j in jobs:
-            if str(j.get("source", "")).startswith("JobSpy"):
-                for fld in ("posted_on", "location", "pay_band", "ai_signals", "ai_snippet"):
-                    j[fld] = clean_field(j.get(fld))
-                preserved.append(j)
-        return preserved
+            for fld in ("posted_on", "location", "pay_band", "ai_signals", "ai_snippet"):
+                j[fld] = clean_field(j.get(fld))
+            cleaned.append(j)
+        return cleaned, stats
     except Exception:
-        return []
+        return [], {}
+
+
+def load_cached_external_jobs() -> List[Dict[str, Any]]:
+    jobs, _ = load_cached_snapshot()
+    return [j for j in jobs if str(j.get("source", "")).startswith("JobSpy")]
 
 
 def run_pipeline(quick: bool = False) -> Path:
     set_scrape_status(running=True, error="", step="Initializing scrape...")
     try:
-        cached_ext = load_cached_external_jobs() if (quick or not JOBSPY_AVAILABLE) else []
+        cached_all, cached_stats = load_cached_snapshot()
+        cached_ext = [j for j in cached_all if str(j.get("source", "")).startswith("JobSpy")] if (quick or not JOBSPY_AVAILABLE) else []
         rbc_items, rbc_total = scrape_rbc_workday()
         cnb_items, cnb_total = scrape_cnb()
         ashby_items = scrape_ashby_partners()
         ext_items = [] if quick else scrape_jobspy_ecosystem_and_sow()
 
         curated = classify_and_score(rbc_items + cnb_items + ashby_items + ext_items)
+        existing_keys = {(x["company"].lower(), x["title"].lower()) for x in curated}
+
+        def merge_cached(source_filter, label: str) -> int:
+            added = 0
+            for cj in cached_all:
+                if source_filter(str(cj.get("source", ""))):
+                    k = (cj.get("company", "").lower(), cj.get("title", "").lower())
+                    if k not in existing_keys:
+                        curated.append(cj)
+                        existing_keys.add(k)
+                        added += 1
+            if added:
+                print(f"      Preserved {added} cached {label} postings.")
+            return added
+
+        if rbc_total == 0:
+            merge_cached(lambda s: s == "RBC Workday", "RBC Workday (transient fetch fallback)")
+            rbc_total = int(cached_stats.get("rbc_total", 0))
+        if cnb_total == 0:
+            merge_cached(lambda s: s.startswith("City National Bank"), "City National Bank (transient fetch fallback)")
+            cnb_total = int(cached_stats.get("cnb_total", 0))
+        if not ashby_items:
+            merge_cached(lambda s: s.startswith("Ashby"), "Ashby partner (transient fetch fallback)")
         if not ext_items and cached_ext:
-            existing_keys = {(x["company"].lower(), x["title"].lower()) for x in curated}
-            for cj in cached_ext:
-                k = (cj.get("company", "").lower(), cj.get("title", "").lower())
-                if k not in existing_keys:
-                    curated.append(cj)
-                    existing_keys.add(k)
-            curated.sort(key=lambda x: (x["bucket"], -x["score"], x["title"]))
-            print(f"      Preserved {len(cached_ext)} cached Indeed/LinkedIn SOW postings during fast API refresh.")
+            merge_cached(lambda s: s.startswith("JobSpy"), "Indeed/LinkedIn SOW")
+
+        curated.sort(key=lambda x: (x["bucket"], -x["score"], x["title"]))
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         stats = {
             "timestamp": now_str,
             "rbc_total": rbc_total,
             "cnb_total": cnb_total,
-            "ashby_total": len(ashby_items),
+            "ashby_total": len(ashby_items) if ashby_items else int(cached_stats.get("ashby_total", 0)),
             "ext_total": len(ext_items) if ext_items else len(cached_ext),
         }
 
