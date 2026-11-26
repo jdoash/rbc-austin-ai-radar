@@ -1,6 +1,7 @@
 # RBC + Austin, TX AI & Finance Job Radar
 
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-0051a5?style=flat-square&logo=python&logoColor=white)
+![Cross-Platform E2E](https://github.com/jdoash/rbc-austin-ai-radar/actions/workflows/cross-platform-e2e.yml/badge.svg)
 ![Zero API Keys](https://img.shields.io/badge/API%20Keys-None%20Required-047857?style=flat-square)
 ![Portals](https://img.shields.io/badge/Live%20Sources-RBC%20Workday%20%7C%20CNB%20%7C%20Ashby%20%7C%20Indeed%20%7C%20LinkedIn-002855?style=flat-square)
 ![Target](https://img.shields.io/badge/Focus-Finance%20%2B%20AI%20(Austin%20%26%20Remote)-ffd200?style=flat-square&labelColor=002855)

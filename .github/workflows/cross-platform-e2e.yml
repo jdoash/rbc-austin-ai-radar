@@ -1,0 +1,155 @@
+name: Cross-Platform Full Lifecycle E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lifecycle-e2e:
+    name: Full Lifecycle (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Static, EOL, privacy, and zero-dash checks
+        shell: python
+        run: |
+          import ast, os, subprocess
+          from pathlib import Path
+
+          repo = Path(".")
+          ast.parse((repo / "rbc_austin_radar.py").read_text(encoding="utf-8"))
+
+          sh_bytes = (repo / "run.sh").read_bytes()
+          assert b"\r" not in sh_bytes, "run.sh must use LF line endings"
+          if os.name != "nt":
+              assert os.access(repo / "run.sh", os.X_OK), "run.sh must be executable"
+              subprocess.run(["bash", "-n", "run.sh"], check=True)
+              subprocess.run(["sh", "-n", "run.sh"], check=True)
+          else:
+              bat_bytes = (repo / "run.bat").read_bytes()
+              assert b"\r\n" in bat_bytes and b"\n" not in bat_bytes.replace(b"\r\n", b""), "run.bat must use CRLF on Windows"
+
+          for rel in [
+              "rbc_austin_radar.py", "run.bat", "run.sh", "README.md",
+              "requirements.txt", ".gitignore", ".gitattributes",
+              "outputs/rbc_austin_ai_board.html", "outputs/rbc_austin_ai_jobs.csv", "outputs/rbc_austin_ai_jobs.json",
+          ]:
+              txt = (repo / rel).read_text(encoding="utf-8")
+              for pat in ["\u2014", "\u2013", "&mdash;", "&ndash;", "&#8212;", "&#8213;", "&#x2014;", "&#x2013;"]:
+                  assert pat not in txt, f"Disallowed dash {pat!r} found in {rel}"
+          print("Static, EOL, and zero-dash checks PASS")
+
+      - name: Full user lifecycle via native launcher (cold venv -> HTTP -> live POST /api/scrape -> outputs)
+        shell: python
+        run: |
+          import csv, json, os, socket, subprocess, sys, time, urllib.error, urllib.request
+          from pathlib import Path
+
+          repo = Path(".").resolve()
+          log_path = repo / "_ci_launcher.log"
+
+          # Hold port 8920 busy on 0.0.0.0 to prove cross-platform port fallback -> 8921 (including Windows!)
+          blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          if os.name != "nt":
+              blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          blocker.bind(("0.0.0.0", 8920))
+          blocker.listen(5)
+
+          if os.name == "nt":
+              cmd = ["cmd.exe", "/c", "run.bat", "--port", "8920", "--no-open"]
+          else:
+              cmd = ["./run.sh", "--port", "8920", "--no-open"]
+
+          t0 = time.time()
+          with log_path.open("w", encoding="utf-8") as lf:
+              proc = subprocess.Popen(cmd, cwd=str(repo), stdout=lf, stderr=subprocess.STDOUT)
+              try:
+                  # 1. Wait for cold .venv + pip install + server boot on fallback port 8921
+                  up = False
+                  for _ in range(360):
+                      if proc.poll() is not None:
+                          break
+                      try:
+                          with urllib.request.urlopen("http://127.0.0.1:8921/api/status", timeout=1.0) as r:
+                              if r.status == 200:
+                                  up = True
+                                  break
+                      except Exception:
+                          time.sleep(0.5)
+                  assert up, f"Launcher failed to start server on 8921!\n{log_path.read_text(encoding='utf-8', errors='replace')[-4000:]}"
+                  print(f"[1/5] Cold native launcher + venv + 0.0.0.0:8920->8921 fallback PASS ({time.time()-t0:.1f}s)")
+
+                  # 2. Verify GET /, /api/status, /export.csv, and 404 on unknown route
+                  with urllib.request.urlopen("http://127.0.0.1:8921/", timeout=5) as r:
+                      html_body = r.read().decode("utf-8")
+                      assert r.status == 200 and "Refresh Fast APIs" in html_body
+                  with urllib.request.urlopen("http://127.0.0.1:8921/export.csv", timeout=5) as r:
+                      csv_bytes = r.read()
+                      assert r.status == 200 and csv_bytes.startswith(b"\xef\xbb\xbf")
+                  got_404 = False
+                  try:
+                      urllib.request.urlopen("http://127.0.0.1:8921/nonexistent-ci-404", timeout=5)
+                  except urllib.error.HTTPError as he:
+                      got_404 = (he.code == 404)
+                  assert got_404, "Expected HTTP 404 on unknown GET route"
+                  print("[2/5] HTTP routes PASS (GET / 200, /api/status 200, /export.csv 200 BOM, /nonexistent 404)")
+
+                  # 3. Trigger live POST /api/scrape?quick=1 + verify SCRAPE_LOCK concurrency guard
+                  t1 = time.time()
+                  req1 = urllib.request.Request("http://127.0.0.1:8921/api/scrape?quick=1", method="POST")
+                  req2 = urllib.request.Request("http://127.0.0.1:8921/api/scrape?quick=1", method="POST")
+                  with urllib.request.urlopen(req1, timeout=5) as r1:
+                      d1 = json.loads(r1.read().decode("utf-8"))
+                  with urllib.request.urlopen(req2, timeout=5) as r2:
+                      d2 = json.loads(r2.read().decode("utf-8"))
+                  assert d1 == {"started": True, "already_running": False}, f"Unexpected POST1: {d1}"
+                  assert d2 == {"started": False, "already_running": True}, f"Unexpected POST2: {d2}"
+                  print(f"[3/5] Live POST /api/scrape?quick=1 + SCRAPE_LOCK PASS ({d1}, {d2})")
+
+                  # 4. Poll GET /api/status until live scrape completes
+                  final_st = None
+                  for _ in range(300):
+                      time.sleep(1.0)
+                      with urllib.request.urlopen("http://127.0.0.1:8921/api/status", timeout=5) as r:
+                          st = json.loads(r.read().decode("utf-8"))
+                          if not st.get("running"):
+                              final_st = st
+                              break
+                  assert final_st and final_st.get("step") == "Complete" and not final_st.get("error"), f"Scrape failed: {final_st}"
+                  print(f"[4/5] Live scrape completed PASS ({time.time()-t1:.1f}s) | last_updated={final_st['last_updated']}")
+
+                  # 5. Validate refreshed outputs + served HTML update + zero dashes
+                  fresh_json = json.loads((repo / "outputs" / "rbc_austin_ai_jobs.json").read_text(encoding="utf-8"))
+                  fresh_html = (repo / "outputs" / "rbc_austin_ai_board.html").read_text(encoding="utf-8")
+                  with (repo / "outputs" / "rbc_austin_ai_jobs.csv").open("r", encoding="utf-8-sig", newline="") as f:
+                      rows = list(csv.DictReader(f))
+                  assert len(fresh_json["jobs"]) == len(rows) and len(rows) >= 35
+                  assert fresh_json["stats"]["rbc_total"] > 500 and fresh_json["stats"]["cnb_total"] > 50
+                  assert "\u2014" not in fresh_html and "\u2013" not in fresh_html
+                  with urllib.request.urlopen("http://127.0.0.1:8921/", timeout=5) as r:
+                      assert final_st["last_updated"] in r.read().decode("utf-8")
+                  print(f"[5/5] Refreshed outputs verified PASS: curated={len(rows)}, stats={fresh_json['stats']}")
+              finally:
+                  if os.name == "nt":
+                      subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+                  else:
+                      proc.terminate()
+                  try:
+                      proc.wait(timeout=5)
+                  except Exception:
+                      proc.kill()
+                  blocker.close()

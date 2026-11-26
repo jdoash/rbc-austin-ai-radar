@@ -41,6 +41,8 @@ find_python() {
     return 1
 }
 
+RUN_PY=".venv/bin/python"
+
 if [ ! -x ".venv/bin/python" ] || ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
     if [ -d ".venv" ]; then
         echo "Removing incomplete virtual environment..."
@@ -54,19 +56,26 @@ if [ ! -x ".venv/bin/python" ] || ! .venv/bin/python -m pip --version >/dev/null
     fi
     echo "[1/2] Creating local Python virtual environment with $SYS_PY..."
     if ! "$SYS_PY" -m venv .venv || [ ! -x ".venv/bin/python" ] || ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
-        echo "Failed to create a working virtual environment (on Debian/Ubuntu, run: sudo apt install python3-venv)."
         rm -rf .venv
-        open_offline_snapshot
-        exit 1
-    fi
-    echo "[2/2] Installing dependencies..."
-    .venv/bin/python -m pip install --upgrade pip -q
-    if ! .venv/bin/python -m pip install -r requirements.txt; then
-        echo "Optional JobSpy build skipped; installing core requests scraper..."
-        if ! .venv/bin/python -m pip install "requests>=2.31.0"; then
-            echo "Failed to install core requests dependency."
+        if "$SYS_PY" -c "import requests" >/dev/null 2>&1; then
+            echo "Notice: python3-venv is unavailable (for optional JobSpy support on Debian/Ubuntu, run: sudo apt install python3-venv)."
+            echo "Falling back to system $SYS_PY with installed requests..."
+            RUN_PY="$SYS_PY"
+        else
+            echo "Failed to create a working virtual environment (on Debian/Ubuntu, run: sudo apt install python3-venv)."
             open_offline_snapshot
             exit 1
+        fi
+    else
+        echo "[2/2] Installing dependencies..."
+        .venv/bin/python -m pip install --upgrade pip -q
+        if ! .venv/bin/python -m pip install -r requirements.txt; then
+            echo "Optional JobSpy build skipped; installing core requests scraper..."
+            if ! .venv/bin/python -m pip install "requests>=2.31.0"; then
+                echo "Failed to install core requests dependency."
+                open_offline_snapshot
+                exit 1
+            fi
         fi
     fi
 fi
@@ -74,4 +83,4 @@ fi
 export PYTHONIOENCODING=utf-8
 export PYTHONUNBUFFERED=1
 echo "Launching interactive local radar server at http://127.0.0.1:8787 ..."
-exec .venv/bin/python rbc_austin_radar.py --serve "$@"
+exec "$RUN_PY" rbc_austin_radar.py --serve "$@"
