@@ -35,8 +35,9 @@ cd rbc-austin-ai-radar
 chmod +x run.sh
 ./run.sh
 ```
+*(On minimal Debian/Ubuntu installs, make sure `python3-venv` is installed via `sudo apt install python3-venv`.)*
 
-Both launchers automatically create a local `.venv`, install `requests` + `python-jobspy` (falling back cleanly to core `requests` on restricted machines), start the local web server at **`http://127.0.0.1:8787`**, and open your browser.
+Both launchers automatically create a local `.venv`, install `requests` + `python-jobspy` (falling back cleanly to core `requests` on restricted machines), start the local web server at **`http://127.0.0.1:8787`** (forwarding any extra CLI flags such as `--port 8890` or `--no-open`), and open your browser.
 
 ---
 
@@ -47,8 +48,8 @@ Because corporate banking roles span direct W-2 requisitions, subsidiary boards,
 | Lane | Sources & Employers | Geographic Scope | Focus |
 | :--- | :--- | :--- | :--- |
 | **1. Direct RBC / CNB (Austin & Remote)** | RBC Workday (`RBCGLOBAL1`), City National Bank | Austin, TX or US-Remote | Direct W-2 AI, data, and transformation postings in Texas or remote |
-| **2. Strategic AI Partners** | **Cohere**, **Conquest Planning**, **Factory**, **Solace** | Austin, TX or US-Remote | Enterprise AI platforms deployed across banking, wealth management, and capital markets |
-| **3. Banking AI Consulting & Advisory** | Financial Services AI & Model Risk practices (`Indeed` + `LinkedIn`) | Austin, TX or US-Remote | Director, Principal, VP, and Practice Lead roles supporting Tier-1 banking AI programs |
+| **2. Strategic AI Partners** | **Cohere** & **Factory** (Ashby API) + **Conquest Planning** & **Solace** (`Indeed` via JobSpy) | Austin, TX or US-Remote | Enterprise AI platforms deployed across banking, wealth management, and capital markets |
+| **3. Banking AI Consulting & Advisory** | Financial Services AI & Model Risk practices (`Indeed` + `LinkedIn` via JobSpy) | Austin, TX or US-Remote | Director, Principal, VP, and Practice Lead roles supporting Tier-1 banking AI programs |
 | **4. US Finance + AI Hub Roles** | RBC US Wealth Management (Minneapolis) & Capital Markets (NY / JC / Charlotte) | Major US Hubs | Senior US AI, Wealth, and Capital Markets leadership mandates |
 | **5. Texas & Remote Precedents** | City National Rochdale & RBC Texas postings | Texas (Austin / Dallas / Houston) & Remote | Active Texas corporate hub and remote field postings across RBC US entities |
 | **6. Enterprise AI Mandate Benchmarks** | RBC Global Workday (`AI Business Enablement`, `AI Readiness`) | Global HQ Reference | Reference charters for enterprise AI adoption, governance, and product leadership |
@@ -72,10 +73,11 @@ All scraping, filtering, and UI generation live in a single Python file (`rbc_au
 * **Indeed / LinkedIn search queries & locations:** Edit the `queries` list inside `scrape_jobspy_ecosystem_and_sow()` to change cities, boolean search strings, or result limits.
 * **CLI options:**
   ```bash
-  python rbc_austin_radar.py --serve          # Launch interactive local web app on http://127.0.0.1:8787
-  python rbc_austin_radar.py --quick          # Fast ~15s API refresh (RBC + CNB + Ashby; keeps cached external roles)
-  python rbc_austin_radar.py                  # Full scrape (APIs + Indeed + LinkedIn) + open static HTML
-  python rbc_austin_radar.py --port 8890      # Run local server on a custom port
+  python rbc_austin_radar.py --serve                      # Launch interactive local web app on http://127.0.0.1:8787
+  python rbc_austin_radar.py --serve --port 8890          # Run local server on a custom port (--port also implies --serve)
+  python rbc_austin_radar.py --serve --no-open            # Start local server without auto-opening a browser tab
+  python rbc_austin_radar.py --quick --no-open            # Fast API-only refresh (~60-90s; RBC + CNB + Ashby; keeps cached JobSpy roles)
+  python rbc_austin_radar.py                              # Full scrape (APIs + Indeed + LinkedIn) + open static HTML
   ```
 
 ---
@@ -88,6 +90,8 @@ rbc-austin-ai-radar/
 |-- run.bat                           # One-click Windows launcher
 |-- run.sh                            # One-click macOS / Linux launcher
 |-- requirements.txt                  # Python dependencies (requests, python-jobspy)
+|-- .gitignore                        # Excludes .venv and Python caches
+|-- .gitattributes                    # Enforces LF for .sh/.py and CRLF for .bat
 |-- docs/
 |   `-- dashboard_preview.png         # Dashboard screenshot
 `-- outputs/

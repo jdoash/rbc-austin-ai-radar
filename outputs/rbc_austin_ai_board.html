@@ -238,19 +238,19 @@
     <div class="wrap">
       <section class="playbook-grid">
         <div class="play-card">
-          <h3>Lane 1: Strategic AI Partners (Austin &amp; Remote)</h3>
+          <h3>Lane 2: Strategic AI Partners (Austin &amp; Remote)</h3>
           <p>Enterprise AI vendors deployed across banking and wealth platforms (Cohere, Conquest Planning, Factory, and Solace) hiring in Austin and US-Remote.</p>
         </div>
         <div class="play-card">
-          <h3>Lane 2: Banking AI Consulting &amp; Advisory</h3>
+          <h3>Lane 3: Banking AI Consulting &amp; Advisory</h3>
           <p>Financial Services AI Strategy, Governance, and Model Risk practices in Austin and US-Remote supporting Tier-1 banking transformation programs.</p>
         </div>
         <div class="play-card">
-          <h3>Lane 3: US Finance + AI Hub Roles</h3>
+          <h3>Lane 4: US Finance + AI Hub Roles</h3>
           <p>Senior US Wealth Management (Minneapolis) and Capital Markets requisitions tracked alongside regional Texas office locations (Austin &amp; Dallas).</p>
         </div>
         <div class="play-card">
-          <h3>Lane 4: Texas &amp; Remote Roles (RBC / CNB)</h3>
+          <h3>Lane 5: Texas &amp; Remote Roles (RBC / CNB)</h3>
           <p>Active Texas hub and Remote-in-Texas field postings across City National Bank, City National Rochdale, and RBC US Wealth Management.</p>
         </div>
       </section>
@@ -2492,14 +2492,30 @@
       const st = document.getElementById('scrapeStatus');
       if (!st) return;
       st.textContent = 'Starting live scrape...';
-      await fetch('/api/scrape?quick=' + (quick ? '1' : '0'), { method: 'POST' });
+      try {
+        await fetch('/api/scrape?quick=' + (quick ? '1' : '0'), { method: 'POST' });
+      } catch (err) {
+        st.textContent = 'Scrape trigger failed: ' + err;
+        return;
+      }
       const timer = setInterval(async () => {
-        const r = await fetch('/api/status');
-        const d = await r.json();
-        st.textContent = d.running ? d.step : 'Reloading...';
-        if (!d.running) {
+        try {
+          const r = await fetch('/api/status');
+          const d = await r.json();
+          if (d.running) {
+            st.textContent = d.step || 'Scraping...';
+          } else {
+            clearInterval(timer);
+            if (d.error) {
+              st.textContent = 'Error: ' + d.error;
+            } else {
+              st.textContent = 'Reloading...';
+              location.reload();
+            }
+          }
+        } catch (err) {
           clearInterval(timer);
-          location.reload();
+          st.textContent = 'Status check failed: ' + err;
         }
       }, 1500);
     }

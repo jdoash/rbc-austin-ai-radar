@@ -8,9 +8,10 @@ data, and financial services roles across RBC, City National Bank, partner
 ecosystems, and Austin, TX / US-Remote channels.
 
 Usage:
-  python rbc_austin_radar.py            # Full live scrape + open HTML board
-  python rbc_austin_radar.py --quick    # Fast API scrape (~15s, skips JobSpy)
-  python rbc_austin_radar.py --serve    # Launch interactive local web app (port 8787)
+  python rbc_austin_radar.py                 # Full live scrape + open HTML board
+  python rbc_austin_radar.py --quick         # API-only refresh (~60-90s, skips JobSpy)
+  python rbc_austin_radar.py --serve         # Launch interactive local web app (port 8787)
+  python rbc_austin_radar.py --serve --port 8890 --no-open
 """
 
 from __future__ import annotations
@@ -19,10 +20,14 @@ import argparse
 import concurrent.futures
 import csv
 import html
+import inspect
 import json
 import math
+import os
 import re
 import socket
+import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -34,6 +39,14 @@ from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
 
 import requests
+
+# Ensure UTF-8 console output even when launched directly on Windows cp1252 terminals
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 try:
     from jobspy import scrape_jobs
@@ -88,12 +101,39 @@ BUCKET_LABELS = {
     "6_rbc_ai_enablement_blueprints": "6. Enterprise AI Enablement & Readiness Benchmarks",
 }
 
+SCRAPE_LOCK = threading.Lock()
 SCRAPE_STATUS: Dict[str, Any] = {
     "running": False,
     "step": "Idle",
     "last_updated": "",
     "error": "",
 }
+
+
+def set_scrape_status(**kwargs: Any) -> None:
+    with SCRAPE_LOCK:
+        SCRAPE_STATUS.update(kwargs)
+
+
+def get_scrape_status() -> Dict[str, Any]:
+    with SCRAPE_LOCK:
+        return dict(SCRAPE_STATUS)
+
+
+def atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding=encoding, newline="") as handle:
+            handle.write(text)
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
 
 
 def clean_field(val: Any) -> str:
@@ -157,10 +197,11 @@ def extract_pay_band(desc: str) -> str:
 # ---------------------------------------------------------------------------
 
 def scrape_rbc_workday() -> tuple[List[Dict[str, Any]], int]:
-    SCRAPE_STATUS["step"] = "Scraping RBC Global Workday (RBCGLOBAL1)..."
+    set_scrape_status(step="Scraping RBC Global Workday (RBCGLOBAL1)...")
     print("[1/5] Scraping RBC Global Workday (RBCGLOBAL1)...")
     list_url = "https://rbc.wd3.myworkdayjobs.com/wday/cxs/rbc/RBCGLOBAL1/jobs"
     r0: Dict[str, Any] = {}
+    last_status = None
     for attempt in range(2):
         try:
             resp0 = requests.post(
@@ -169,14 +210,19 @@ def scrape_rbc_workday() -> tuple[List[Dict[str, Any]], int]:
                 json={"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""},
                 timeout=25,
             )
+            last_status = resp0.status_code
             if resp0.status_code == 200:
                 r0 = resp0.json()
                 break
+            time.sleep(1.0)
         except Exception as e:
             if attempt == 1:
                 print(f"      RBC Workday initial request warning: {e}")
                 return [], 0
             time.sleep(1.0)
+    if not r0:
+        print(f"      RBC Workday initial request returned HTTP {last_status}; skipping Workday.")
+        return [], 0
     total = r0.get("total", 0)
     postings = list(r0.get("jobPostings", []))
 
@@ -211,7 +257,7 @@ def scrape_rbc_workday() -> tuple[List[Dict[str, Any]], int]:
         if is_multi or is_us or is_senior_ai_bench or (is_ai_title and not any(c in loc for c in CANADA_CITIES)):
             to_enrich.append(p)
 
-    SCRAPE_STATUS["step"] = f"Enriching {len(to_enrich)} RBC US & AI postings..."
+    set_scrape_status(step=f"Enriching {len(to_enrich)} RBC US & AI postings...")
     print(f"      Pulled {len(postings)} RBC postings; enriching {len(to_enrich)} candidates...")
 
     get_headers = {"Accept": "application/json", "Accept-Encoding": "gzip, deflate", "User-Agent": HEADERS["User-Agent"]}
@@ -257,11 +303,11 @@ def scrape_rbc_workday() -> tuple[List[Dict[str, Any]], int]:
 
 
 def scrape_cnb() -> tuple[List[Dict[str, Any]], int]:
-    SCRAPE_STATUS["step"] = "Scraping City National Bank & Rochdale (RBC)..."
+    set_scrape_status(step="Scraping City National Bank & Rochdale (RBC)...")
     print("[2/5] Scraping City National Bank & Rochdale (an RBC Company)...")
     cnb_raw = []
     get_headers = {"Accept": "application/json", "Accept-Encoding": "gzip, deflate", "User-Agent": HEADERS["User-Agent"]}
-    for page in [1, 2, 3]:
+    for page in range(1, 11):
         try:
             r = requests.get(f"https://careers.cnb.com/api/jobs?page={page}&limit=100", headers=get_headers, timeout=20)
             if r.status_code == 200:
@@ -269,6 +315,10 @@ def scrape_cnb() -> tuple[List[Dict[str, Any]], int]:
                 if not batch:
                     break
                 cnb_raw.extend(batch)
+                if len(batch) < 100:
+                    break
+            else:
+                break
         except Exception:
             break
 
@@ -300,7 +350,7 @@ def scrape_cnb() -> tuple[List[Dict[str, Any]], int]:
 
 
 def scrape_ashby_partners() -> List[Dict[str, Any]]:
-    SCRAPE_STATUS["step"] = "Scraping RBC Strategic AI Partners (Cohere & Factory)..."
+    set_scrape_status(step="Scraping RBC Strategic AI Partners (Cohere & Factory)...")
     print("[3/5] Scraping RBC Strategic AI Partners on Ashby (Cohere 'North for Banking' & Factory)...")
     partners = [
         (
@@ -362,8 +412,11 @@ def scrape_jobspy_ecosystem_and_sow() -> List[Dict[str, Any]]:
         print("[4/5] JobSpy not installed; skipping external Indeed/LinkedIn sweep.")
         return []
 
-    SCRAPE_STATUS["step"] = "Scraping Indeed USA & LinkedIn for RBC Vendors & Banking AI SOWs..."
+    set_scrape_status(step="Scraping Indeed USA & LinkedIn for RBC Vendors & Banking AI SOWs...")
     print("[4/5] Scraping Indeed USA & LinkedIn for RBC Ecosystem Vendors & Austin/Remote Banking AI Consulting SOWs...")
+
+    jobspy_params = inspect.signature(scrape_jobs).parameters
+    desc_kwarg = {"fetch_description": True} if "fetch_description" in jobspy_params else {"linkedin_fetch_description": True}
 
     queries = [
         # RBC-named portfolio & infrastructure vendors (Conquest Planning, Solace, etc.)
@@ -408,8 +461,8 @@ def scrape_jobspy_ecosystem_and_sow() -> List[Dict[str, Any]]:
                 is_remote=q["is_remote"],
                 results_wanted=q["results_wanted"],
                 country_indeed="usa",
-                linkedin_fetch_description=True,
                 verbose=0,
+                **desc_kwarg,
             )
             if df is None or df.empty:
                 continue
@@ -628,7 +681,7 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
     if interactive_server:
         server_controls = """
         <div class="server-actions">
-          <button class="srv-btn" onclick="triggerScrape(true)" id="btnQuick">Refresh Fast APIs (~15s)</button>
+          <button class="srv-btn" onclick="triggerScrape(true)" id="btnQuick">Refresh Fast APIs (~60-90s)</button>
           <button class="srv-btn srv-btn-gold" onclick="triggerScrape(false)" id="btnFull">Run Full Scrape (+ Indeed/LinkedIn)</button>
           <a class="srv-btn" href="/export.csv">Download CSV</a>
           <span id="scrapeStatus" class="status-pill">Ready</span>
@@ -929,19 +982,19 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
     <div class="wrap">
       <section class="playbook-grid">
         <div class="play-card">
-          <h3>Lane 1: Strategic AI Partners (Austin &amp; Remote)</h3>
+          <h3>Lane 2: Strategic AI Partners (Austin &amp; Remote)</h3>
           <p>Enterprise AI vendors deployed across banking and wealth platforms (Cohere, Conquest Planning, Factory, and Solace) hiring in Austin and US-Remote.</p>
         </div>
         <div class="play-card">
-          <h3>Lane 2: Banking AI Consulting &amp; Advisory</h3>
+          <h3>Lane 3: Banking AI Consulting &amp; Advisory</h3>
           <p>Financial Services AI Strategy, Governance, and Model Risk practices in Austin and US-Remote supporting Tier-1 banking transformation programs.</p>
         </div>
         <div class="play-card">
-          <h3>Lane 3: US Finance + AI Hub Roles</h3>
+          <h3>Lane 4: US Finance + AI Hub Roles</h3>
           <p>Senior US Wealth Management (Minneapolis) and Capital Markets requisitions tracked alongside regional Texas office locations (Austin &amp; Dallas).</p>
         </div>
         <div class="play-card">
-          <h3>Lane 4: Texas &amp; Remote Roles (RBC / CNB)</h3>
+          <h3>Lane 5: Texas &amp; Remote Roles (RBC / CNB)</h3>
           <p>Active Texas hub and Remote-in-Texas field postings across City National Bank, City National Rochdale, and RBC US Wealth Management.</p>
         </div>
       </section>
@@ -1023,14 +1076,30 @@ def build_html_board(items: List[Dict[str, Any]], stats: Dict[str, Any], interac
       const st = document.getElementById('scrapeStatus');
       if (!st) return;
       st.textContent = 'Starting live scrape...';
-      await fetch('/api/scrape?quick=' + (quick ? '1' : '0'), {{ method: 'POST' }});
+      try {{
+        await fetch('/api/scrape?quick=' + (quick ? '1' : '0'), {{ method: 'POST' }});
+      }} catch (err) {{
+        st.textContent = 'Scrape trigger failed: ' + err;
+        return;
+      }}
       const timer = setInterval(async () => {{
-        const r = await fetch('/api/status');
-        const d = await r.json();
-        st.textContent = d.running ? d.step : 'Reloading...';
-        if (!d.running) {{
+        try {{
+          const r = await fetch('/api/status');
+          const d = await r.json();
+          if (d.running) {{
+            st.textContent = d.step || 'Scraping...';
+          }} else {{
+            clearInterval(timer);
+            if (d.error) {{
+              st.textContent = 'Error: ' + d.error;
+            }} else {{
+              st.textContent = 'Reloading...';
+              location.reload();
+            }}
+          }}
+        }} catch (err) {{
           clearInterval(timer);
-          location.reload();
+          st.textContent = 'Status check failed: ' + err;
         }}
       }}, 1500);
     }}
@@ -1066,8 +1135,7 @@ def load_cached_external_jobs() -> List[Dict[str, Any]]:
 
 
 def run_pipeline(quick: bool = False) -> Path:
-    SCRAPE_STATUS["running"] = True
-    SCRAPE_STATUS["error"] = ""
+    set_scrape_status(running=True, error="", step="Initializing scrape...")
     try:
         cached_ext = load_cached_external_jobs() if (quick or not JOBSPY_AVAILABLE) else []
         rbc_items, rbc_total = scrape_rbc_workday()
@@ -1095,7 +1163,8 @@ def run_pipeline(quick: bool = False) -> Path:
             "ext_total": len(ext_items) if ext_items else len(cached_ext),
         }
 
-        (OUT_DIR / "rbc_austin_ai_jobs.json").write_text(
+        atomic_write_text(
+            OUT_DIR / "rbc_austin_ai_jobs.json",
             json.dumps({"stats": stats, "jobs": curated}, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -1105,27 +1174,36 @@ def run_pipeline(quick: bool = False) -> Path:
             "location", "remote_type", "pay_band", "posted_on", "ai_signals",
             "ai_snippet", "austin_strategy", "url", "description",
         ]
-        with (OUT_DIR / "rbc_austin_ai_jobs.csv").open("w", newline="", encoding="utf-8-sig") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(curated)
+        csv_path = OUT_DIR / "rbc_austin_ai_jobs.csv"
+        fd, tmp_csv_name = tempfile.mkstemp(dir=str(OUT_DIR), prefix=".rbc_austin_ai_jobs.csv.", suffix=".tmp")
+        tmp_csv = Path(tmp_csv_name)
+        try:
+            with os.fdopen(fd, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(curated)
+            os.replace(tmp_csv, csv_path)
+        except Exception:
+            try:
+                tmp_csv.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise
 
         html_path = OUT_DIR / "rbc_austin_ai_board.html"
-        html_path.write_text(build_html_board(curated, stats, interactive_server=False), encoding="utf-8")
+        atomic_write_text(html_path, build_html_board(curated, stats, interactive_server=False), encoding="utf-8")
 
-        SCRAPE_STATUS["last_updated"] = now_str
-        SCRAPE_STATUS["step"] = "Complete"
+        set_scrape_status(last_updated=now_str, step="Complete")
         print("\n=== RADAR SUMMARY ===")
         for k, lbl in BUCKET_LABELS.items():
             print(f"  {sum(1 for x in curated if x['bucket'] == k):3d} | {lbl}")
         print(f"\nSaved board: {html_path}")
         return html_path
     except Exception as e:
-        SCRAPE_STATUS["error"] = str(e)
-        SCRAPE_STATUS["step"] = f"Error: {e}"
+        set_scrape_status(error=str(e), step=f"Error: {e}")
         raise
     finally:
-        SCRAPE_STATUS["running"] = False
+        set_scrape_status(running=False)
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -1135,7 +1213,7 @@ class RadarHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/api/status":
-            body = json.dumps(SCRAPE_STATUS).encode("utf-8")
+            body = json.dumps(get_scrape_status()).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
@@ -1150,6 +1228,13 @@ class RadarHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Disposition", 'attachment; filename="rbc_austin_ai_jobs.csv"')
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        if parsed.path not in ("/", "/index.html"):
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Not Found")
             return
 
         json_file = OUT_DIR / "rbc_austin_ai_jobs.json"
@@ -1171,40 +1256,66 @@ class RadarHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/scrape":
             qs = parse_qs(parsed.query)
             quick = qs.get("quick", ["0"])[0] == "1"
-            if not SCRAPE_STATUS["running"]:
+            started = False
+            with SCRAPE_LOCK:
+                if not SCRAPE_STATUS["running"]:
+                    SCRAPE_STATUS["running"] = True
+                    SCRAPE_STATUS["error"] = ""
+                    SCRAPE_STATUS["step"] = "Starting live scrape..."
+                    started = True
+            if started:
                 threading.Thread(target=run_pipeline, kwargs={"quick": quick}, daemon=True).start()
             self.send_response(202)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b'{"started":true}')
+            self.wfile.write(json.dumps({"started": started, "already_running": not started}).encode("utf-8"))
             return
         self.send_response(404)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
+        self.wfile.write(b"Not Found")
 
 
 class ReusableThreadingHTTPServer(ThreadingHTTPServer):
-    allow_reuse_address = True
+    # On POSIX, SO_REUSEADDR avoids TIME_WAIT bind errors; on Windows, SO_REUSEADDR
+    # permits hijacking an active 0.0.0.0 listener on 127.0.0.1, so disable it there.
+    allow_reuse_address = (os.name != "nt")
 
 
-def serve_app(port: int = 8787) -> None:
+def _is_port_accepting_connections(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def serve_app(port: int = 8787, no_open: bool = False) -> None:
     if not (OUT_DIR / "rbc_austin_ai_jobs.json").exists():
         print("No cached snapshot found; running initial fast API scrape...")
         run_pipeline(quick=True)
 
-    # If an instance of this radar is already running on the requested port, open it cleanly
+    # If an instance of this radar is already running on the requested port, reuse it cleanly
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=0.8) as resp:
             if resp.status == 200:
-                url = f"http://127.0.0.1:{port}"
-                print(f"\nRadar server is already running at {url} - opening browser.")
-                webbrowser.open(url)
-                return
+                status_payload = json.loads(resp.read().decode("utf-8"))
+                if isinstance(status_payload, dict) and "running" in status_payload and "step" in status_payload:
+                    url = f"http://127.0.0.1:{port}"
+                    if no_open:
+                        print(f"\nRadar server is already running at {url}.")
+                    else:
+                        print(f"\nRadar server is already running at {url} - opening browser.")
+                        webbrowser.open(url)
+                    return
     except Exception:
         pass
 
     chosen_port = port
     server = None
     for candidate in range(port, port + 10):
+        if _is_port_accepting_connections(candidate):
+            continue
         try:
             server = ReusableThreadingHTTPServer(("127.0.0.1", candidate), RadarHandler)
             chosen_port = candidate
@@ -1217,7 +1328,8 @@ def serve_app(port: int = 8787) -> None:
 
     url = f"http://127.0.0.1:{chosen_port}"
     print(f"\nRadar live at {url} (Press Ctrl+C to stop)")
-    threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    if not no_open:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1227,14 +1339,14 @@ def serve_app(port: int = 8787) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="RBC + Austin, TX AI & Finance Job Radar")
-    parser.add_argument("--quick", action="store_true", help="Fast API scrape (~15s, skips JobSpy Indeed/LinkedIn)")
+    parser.add_argument("--quick", action="store_true", help="Fast API-only refresh (~60-90s, skips JobSpy Indeed/LinkedIn)")
     parser.add_argument("--serve", action="store_true", help="Run interactive local web server on http://127.0.0.1:8787")
-    parser.add_argument("--port", type=int, default=8787, help="Port for --serve mode (default: 8787)")
-    parser.add_argument("--no-open", action="store_true", help="Do not automatically open browser after CLI scrape")
+    parser.add_argument("--port", type=int, default=None, help="Port for local server (default: 8787; implies --serve)")
+    parser.add_argument("--no-open", action="store_true", help="Do not automatically open a browser tab")
     args = parser.parse_args()
 
-    if args.serve:
-        serve_app(port=args.port)
+    if args.serve or args.port is not None:
+        serve_app(port=args.port if args.port is not None else 8787, no_open=args.no_open)
     else:
         html_path = run_pipeline(quick=args.quick)
         if not args.no_open:
